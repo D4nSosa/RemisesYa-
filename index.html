@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reserva de Remis</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            background-color: #f4f4f4;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            width: 80%;
+            max-width: 400px;
+            box-shadow: 0px 0px 10px rgba(0, 0, 0, 0.1);
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+        input, button, select {
+            width: 100%;
+            margin: 10px 0;
+            padding: 10px;
+            font-size: 16px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        button {
+            background-color: #28a745;
+            color: white;
+            cursor: pointer;
+            border: none;
+        }
+        button:hover {
+            background-color: #218838;
+        }
+        .error {
+            color: red;
+            font-size: 14px;
+            display: none;
+        }
+        .success {
+            color: green;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container" id="login-container">
+        <h2>Iniciar Sesión</h2>
+        <input type="email" id="login-email" placeholder="Email" required>
+        <input type="password" id="login-password" placeholder="Contraseña" required>
+        <button onclick="login()">Iniciar Sesión</button>
+        <button onclick="loginWithGoogle()">Iniciar Sesión con Google</button>
+        <div id="login-error" class="error">Credenciales inválidas.</div>
+        <p>¿No tienes una cuenta? <a href="#" onclick="showRegister()">Registrarse</a></p>
+    </div>
+
+    <div class="container" id="register-container" style="display: none;">
+        <h2>Registrarse</h2>
+        <input type="text" id="register-name" placeholder="Nombre" required>
+        <input type="email" id="register-email" placeholder="Email" required>
+        <input type="password" id="register-password" placeholder="Contraseña" required>
+        <input type="text" id="register-country" placeholder="País" required>
+        <input type="text" id="register-state" placeholder="Estado" required>
+        <input type="text" id="register-city" placeholder="Localidad" required>
+        <select id="register-role" required>
+            <option value="user">Usuario</option>
+            <option value="remiseria">Remisería</option>
+        </select>
+        <button onclick="register()">Registrarse</button>
+        <div id="register-error" class="error">Error al registrarse.</div>
+        <p>¿Ya tienes una cuenta? <a href="#" onclick="showLogin()">Iniciar Sesión</a></p>
+    </div>
+
+    <div class="container" id="profile-container" style="display: none;">
+        <h2>Perfil</h2>
+        <p id="profile-name"></p>
+        <p id="profile-email"></p>
+        <p id="profile-country"></p>
+        <p id="profile-state"></p>
+        <p id="profile-city"></p>
+        <div id="remiseria-contact" style="display: none;">
+            <h3>Contacto de Remisería</h3>
+            <input type="text" id="remiseria-phone" placeholder="Número de Teléfono">
+            <button onclick="updateRemiseriaContact()">Actualizar Contacto</button>
+        </div>
+        <button onclick="showRequestForm()">Solicitar Remis</button>
+        <div id="request-form" style="display: none;">
+            <h3>Solicitar Remis</h3>
+            <input type="text" id="request-origen" placeholder="Lugar de inicio" required>
+            <input type="text" id="request-destino" placeholder="Destino" required>
+            <input type="text" id="request-city" placeholder="Localidad" required>
+            <input type="text" id="request-name" placeholder="Nombre de Remisería (opcional)">
+            <button onclick="solicitarRemis()">Enviar Solicitud</button>
+            <div id="request-error" class="error">Por favor, completa todos los campos.</div>
+            <div id="request-success" class="success" style="display: none;">¡Solicitud enviada con éxito!</div>
+        </div>
+        <h3>Historial de Viajes</h3>
+        <ul id="trip-history"></ul>
+        <button onclick="logout()">Cerrar Sesión</button>
+    </div>
+
+    <!-- Firebase App (the core Firebase SDK) is always required and must be listed first -->
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <!-- Add Firebase products that you want to use -->
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+
+    <script>
+        // Your web app's Firebase configuration
+        const firebaseConfig = {
+            apiKey: process.env.REACT_APP_FIREBASE_API_KEY,
+            authDomain: process.env.REACT_APP_FIREBASE_AUTH_DOMAIN,
+            projectId: process.env.REACT_APP_FIREBASE_PROJECT_ID,
+            storageBucket: process.env.REACT_APP_FIREBASE_STORAGE_BUCKET,
+            messagingSenderId: process.env.REACT_APP_FIREBASE_MESSAGING_SENDER_ID,
+            appId: process.env.REACT_APP_FIREBASE_APP_ID,
+            clientId: process.env.REACT_APP_FIREBASE_CLIENT_ID
+        };
+
+        // Initialize Firebase
+        firebase.initializeApp(firebaseConfig);
+
+        const auth = firebase.auth();
+        const db = firebase.firestore();
+        const googleProvider = new firebase.auth.GoogleAuthProvider();
+
+        async function register() {
+            const name = document.getElementById('register-name').value.trim();
+            const email = document.getElementById('register-email').value.trim();
+            const password = document.getElementById('register-password').value.trim();
+            const country = document.getElementById('register-country').value.trim();
+            const state = document.getElementById('register-state').value.trim();
+            const city = document.getElementById('register-city').value.trim();
+            const role = document.getElementById('register-role').value;
+
+            try {
+                const userCredential = await auth.createUserWithEmailAndPassword(email, password);
+                const user = userCredential.user;
+                await db.collection("users").add({
+                    uid: user.uid,
+                    name,
+                    email,
+                    role,
+                    country,
+                    state,
+                    city
+                });
+                alert("Registro exitoso");
+                showLogin();
+            } catch (error) {
+                console.error("Error al registrar:", error);
+                document.getElementById('register-error').style.display = 'block';
+            }
+        }
+
+        async function login() {
+            const email = document.getElementById('login-email').value.trim();
+            const password = document.getElementById('login-password').value.trim();
+
+            // Validación básica del formato del correo electrónico
+            const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            if (!emailPattern.test(email)) {
+                document.getElementById('login-error').innerText = 'Formato de correo electrónico inválido.';
+                document.getElementById('login-error').style.display = 'block';
+                return;
+            }
+
+            try {
+                const userCredential = await auth.signInWithEmailAndPassword(email, password);
+                const user = userCredential.user;
+                const querySnapshot = await db.collection("users").where("uid", "==", user.uid).get();
+                querySnapshot.forEach((doc) => {
+                    localStorage.setItem('loggedInUser', JSON.stringify(doc.data()));
+                });
+                alert("Inicio de sesión exitoso");
+                showProfile();
+            } catch (error) {
+                console.error("Error al iniciar sesión:", error);
+                document.getElementById('login-error').innerText = 'Credenciales inválidas.';
+                document.getElementById('login-error').style.display = 'block';
+            }
+        }
+
+        async function loginWithGoogle() {
+            try {
+                const result = await auth.signInWithPopup(googleProvider);
+                const user = result.user;
+                const querySnapshot = await db.collection("users").where("uid", "==", user.uid).get();
+                if (querySnapshot.empty) {
+                    // Si el usuario no existe, crear un nuevo documento en Firestore
+                    await db.collection("users").add({
+                        uid: user.uid,
+                        name: user.displayName,
+                        email: user.email,
+                        role: "user", // Puedes cambiar esto según tus necesidades
+                    });
+                }
+                localStorage.setItem('loggedInUser', JSON.stringify({
+                    uid: user.uid,
+                    name: user.displayName,
+                    email: user.email,
+                    role: "user", // Puedes cambiar esto según tus necesidades
+                }));
+                alert("Inicio de sesión exitoso con Google");
+                showProfile();
+            } catch (error) {
+                console.error("Error al iniciar sesión con Google:", error);
+            }
+        }
+
+        function showRegister() {
+            document.getElementById('login-container').style.display = 'none';
+            document.getElementById('register-container').style.display = 'block';
+            document.getElementById('profile-container').style.display = 'none';
+        }
+
+        function showLogin() {
+            document.getElementById('login-container').style.display = 'block';
+            document.getElementById('register-container').style.display = 'none';
+            document.getElementById('profile-container').style.display = 'none';
+        }
+
+        function showProfile() {
+            const user = JSON.parse(localStorage.getItem('loggedInUser'));
+            if (user) {
+                document.getElementById('profile-name').innerText = `Nombre: ${user.name}`;
+                document.getElementById('profile-email').innerText = `Email: ${user.email}`;
+                document.getElementById('profile-country').innerText = `País: ${user.country}`;
+                document.getElementById('profile-state').innerText = `Estado: ${user.state}`;
+                document.getElementById('profile-city').innerText = `Localidad: ${user.city}`;
+                document.getElementById('login-container').style.display = 'none';
+                document.getElementById('register-container').style.display = 'none';
+                document.getElementById('profile-container').style.display = 'block';
+
+                if (user.role === 'remiseria') {
+                    document.getElementById('remiseria-contact').style.display = 'block';
+                } else {
+                    document.getElementById('remiseria-contact').style.display = 'none';
+                }
+
+                loadRemiserias(user.city);
+                loadTripHistory();
+            }
+        }
+
+        function logout() {
+            localStorage.removeItem('loggedInUser');
+            showLogin();
+        }
+
+        async function updateRemiseriaContact() {
+            const user = JSON.parse(localStorage.getItem('loggedInUser'));
+            const phone = document.getElementById('remiseria-phone').value.trim();
+            if (phone) {
+                const querySnapshot = await db.collection("users").where("uid", "==", user.uid).get();
+                querySnapshot.forEach(async (doc) => {
+                    await doc.ref.update({ phone: phone });
+                });
+                user.phone = phone;
+                localStorage.setItem('loggedInUser', JSON.stringify(user));
+                alert('Contacto actualizado con éxito.');
+            } else {
+                alert('Por favor, ingresa un número de teléfono.');
+            }
+        }
+
+        async function loadRemiserias(city) {
+            const remiseriaSelect = document.getElementById('request-remiseria');
+            remiseriaSelect.innerHTML = '<option value="" disabled selected>Selecciona una remisería</option>';
+            const querySnapshot = await db.collection("users").where("role", "==", "remiseria").where("city", "==", city).get();
+            querySnapshot.forEach((doc) => {
+                const remiseria = doc.data();
+                if (remiseria.phone) {
+                    const option = document.createElement('option');
+                    option.value = remiseria.phone;
+                    option.innerText = remiseria.name;
+                    remiseriaSelect.appendChild(option);
+                }
+            });
+        }
+
+        function showRequestForm() {
+            document.getElementById('request-form').style.display = 'block';
+        }
+
+        async function solicitarRemis() {
+            const origen = document.getElementById('request-origen').value.trim();
+            const destino = document.getElementById('request-destino').value.trim();
+            const city = document.getElementById('request-city').value.trim();
+            const remiseriaName = document.getElementById('request-name').value.trim();
+
+            if (origen && destino && city) {
+                const user = JSON.parse(localStorage.getItem('loggedInUser'));
+                let remiseriaPhone = '';
+
+                if (remiseriaName) {
+                    const querySnapshot = await db.collection("users").where("role", "==", "remiseria").where("name", "==", remiseriaName).where("city", "==", city).get();
+                    querySnapshot.forEach((doc) => {
+                        remiseriaPhone = doc.data().phone;
+                    });
+                } else {
+                    const querySnapshot = await db.collection("users").where("role", "==", "remiseria").where("city", "==", city).get();
+                    querySnapshot.forEach((doc) => {
+                        remiseriaPhone = doc.data().phone;
+                    });
+                }
+
+                if (remiseriaPhone) {
+                    const trip = {
+                        userId: user.uid,
+                        origen,
+                        destino,
+                        remiseria: remiseriaPhone,
+                        date: new Date().toLocaleString()
+                    };
+
+                    await db.collection("viajes").add(trip);
+
+                    document.getElementById('request-error').style.display = 'none';
+                    document.getElementById('request-success').style.display = 'block';
+                    setTimeout(() => {
+                        document.getElementById('request-success').style.display = 'none';
+                    }, 3000);
+
+                    const mensaje = `🚖 Nueva Reserva%0A👤 Nombre: ${user.name}%0A📍 Origen: ${origen}%0A🎯 Destino: ${destino}`;
+                    window.open(`https://wa.me/${remiseriaPhone}?text=${mensaje}`);
+
+                    loadTripHistory();
+                } else {
+                    document.getElementById('request-error').innerText = 'No se encontró ninguna remisería disponible.';
+                    document.getElementById('request-error').style.display = 'block';
+                }
+            } else {
+                document.getElementById('request-error').style.display = 'block';
+            }
+        }
+
+        async function loadTripHistory() {
+            const user = JSON.parse(localStorage.getItem('loggedInUser'));
+            const tripHistory = document.getElementById('trip-history');
+            tripHistory.innerHTML = '';
+            const querySnapshot = await db.collection("viajes").where("userId", "==", user.uid).get();
+            querySnapshot.forEach((doc) => {
+                const trip = doc.data();
+                const listItem = document.createElement('li');
+                listItem.innerText = `Fecha: ${trip.date}, Origen: ${trip.origen}, Destino: ${trip.destino}, Remisería: ${trip.remiseria}`;
+                tripHistory.appendChild(listItem);
+            });
+        }
+
+        window.onload = function() {
+            const user = JSON.parse(localStorage.getItem('loggedInUser'));
+            if (user) {
+                showProfile();
+            } else {
+                showLogin();
+            }
+        };
+    </script>
+</body>
+</html>
