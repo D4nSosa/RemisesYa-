@@ -194,21 +194,9 @@
                 const result = await auth.signInWithPopup(googleProvider);
                 const user = result.user;
                 const querySnapshot = await db.collection("users").where("uid", "==", user.uid).get();
-                if (querySnapshot.empty) {
-                    // Si el usuario no existe, crear un nuevo documento en Firestore
-                    await db.collection("users").add({
-                        uid: user.uid,
-                        name: user.displayName,
-                        email: user.email,
-                        role: "user", // Puedes cambiar esto según tus necesidades
-                    });
-                }
-                localStorage.setItem('loggedInUser', JSON.stringify({
-                    uid: user.uid,
-                    name: user.displayName,
-                    email: user.email,
-                    role: "user", // Puedes cambiar esto según tus necesidades
-                }));
+                querySnapshot.forEach((doc) => {
+                    localStorage.setItem('loggedInUser', JSON.stringify(doc.data()));
+                });
                 alert("Inicio de sesión exitoso con Google");
                 showProfile();
             } catch (error) {
@@ -216,74 +204,33 @@
             }
         }
 
-        function showRegister() {
-            document.getElementById('login-container').style.display = 'none';
-            document.getElementById('register-container').style.display = 'block';
-            document.getElementById('profile-container').style.display = 'none';
-        }
-
         function showLogin() {
             document.getElementById('login-container').style.display = 'block';
             document.getElementById('register-container').style.display = 'none';
-            document.getElementById('profile-container').style.display = 'none';
+        }
+
+        function showRegister() {
+            document.getElementById('login-container').style.display = 'none';
+            document.getElementById('register-container').style.display = 'block';
         }
 
         function showProfile() {
             const user = JSON.parse(localStorage.getItem('loggedInUser'));
-            if (user) {
-                document.getElementById('profile-name').innerText = `Nombre: ${user.name}`;
-                document.getElementById('profile-email').innerText = `Email: ${user.email}`;
-                document.getElementById('profile-country').innerText = `País: ${user.country}`;
-                document.getElementById('profile-state').innerText = `Estado: ${user.state}`;
-                document.getElementById('profile-city').innerText = `Localidad: ${user.city}`;
-                document.getElementById('login-container').style.display = 'none';
-                document.getElementById('register-container').style.display = 'none';
-                document.getElementById('profile-container').style.display = 'block';
-
-                if (user.role === 'remiseria') {
-                    document.getElementById('remiseria-contact').style.display = 'block';
-                } else {
-                    document.getElementById('remiseria-contact').style.display = 'none';
-                }
-
-                loadRemiserias(user.city);
-                loadTripHistory();
-            }
+            document.getElementById('profile-name').innerText = user.name;
+            document.getElementById('profile-email').innerText = user.email;
+            document.getElementById('profile-country').innerText = user.country;
+            document.getElementById('profile-state').innerText = user.state;
+            document.getElementById('profile-city').innerText = user.city;
+            document.getElementById('profile-container').style.display = 'block';
+            document.getElementById('login-container').style.display = 'none';
         }
 
         function logout() {
-            localStorage.removeItem('loggedInUser');
-            showLogin();
-        }
-
-        async function updateRemiseriaContact() {
-            const user = JSON.parse(localStorage.getItem('loggedInUser'));
-            const phone = document.getElementById('remiseria-phone').value.trim();
-            if (phone) {
-                const querySnapshot = await db.collection("users").where("uid", "==", user.uid).get();
-                querySnapshot.forEach(async (doc) => {
-                    await doc.ref.update({ phone: phone });
-                });
-                user.phone = phone;
-                localStorage.setItem('loggedInUser', JSON.stringify(user));
-                alert('Contacto actualizado con éxito.');
-            } else {
-                alert('Por favor, ingresa un número de teléfono.');
-            }
-        }
-
-        async function loadRemiserias(city) {
-            const remiseriaSelect = document.getElementById('request-remiseria');
-            remiseriaSelect.innerHTML = '<option value="" disabled selected>Selecciona una remisería</option>';
-            const querySnapshot = await db.collection("users").where("role", "==", "remiseria").where("city", "==", city).get();
-            querySnapshot.forEach((doc) => {
-                const remiseria = doc.data();
-                if (remiseria.phone) {
-                    const option = document.createElement('option');
-                    option.value = remiseria.phone;
-                    option.innerText = remiseria.name;
-                    remiseriaSelect.appendChild(option);
-                }
+            auth.signOut().then(() => {
+                localStorage.removeItem('loggedInUser');
+                showLogin();
+            }).catch((error) => {
+                console.error('Error al cerrar sesión:', error);
             });
         }
 
@@ -295,75 +242,27 @@
             const origen = document.getElementById('request-origen').value.trim();
             const destino = document.getElementById('request-destino').value.trim();
             const city = document.getElementById('request-city').value.trim();
-            const remiseriaName = document.getElementById('request-name').value.trim();
-
-            if (origen && destino && city) {
-                const user = JSON.parse(localStorage.getItem('loggedInUser'));
-                let remiseriaPhone = '';
-
-                if (remiseriaName) {
-                    const querySnapshot = await db.collection("users").where("role", "==", "remiseria").where("name", "==", remiseriaName).where("city", "==", city).get();
-                    querySnapshot.forEach((doc) => {
-                        remiseriaPhone = doc.data().phone;
-                    });
-                } else {
-                    const querySnapshot = await db.collection("users").where("role", "==", "remiseria").where("city", "==", city).get();
-                    querySnapshot.forEach((doc) => {
-                        remiseriaPhone = doc.data().phone;
-                    });
-                }
-
-                if (remiseriaPhone) {
-                    const trip = {
-                        userId: user.uid,
-                        origen,
-                        destino,
-                        remiseria: remiseriaPhone,
-                        date: new Date().toLocaleString()
-                    };
-
-                    await db.collection("viajes").add(trip);
-
-                    document.getElementById('request-error').style.display = 'none';
-                    document.getElementById('request-success').style.display = 'block';
-                    setTimeout(() => {
-                        document.getElementById('request-success').style.display = 'none';
-                    }, 1000);
-
-                    const mensaje = `🚖 Nueva Reserva%0A👤 Nombre: ${user.name}%0A📍 Origen: ${origen}%0A🎯 Destino: ${destino}`;
-                    window.open(`https://wa.me/${remiseriaPhone}?text=${mensaje}`);
-
-                    loadTripHistory();
-                } else {
-                    document.getElementById('request-error').innerText = 'No se encontró ninguna remisería disponible.';
-                    document.getElementById('request-error').style.display = 'block';
-                }
-            } else {
+            const name = document.getElementById('request-name').value.trim();
+            if (!origen || !destino || !city) {
                 document.getElementById('request-error').style.display = 'block';
+                return;
+            }
+
+            try {
+                await db.collection('remisRequests').add({
+                    origen,
+                    destino,
+                    city,
+                    name,
+                    userId: JSON.parse(localStorage.getItem('loggedInUser')).uid
+                });
+                document.getElementById('request-success').style.display = 'block';
+                document.getElementById('request-error').style.display = 'none';
+            } catch (error) {
+                console.error('Error al enviar la solicitud:', error);
             }
         }
-
-        async function loadTripHistory() {
-            const user = JSON.parse(localStorage.getItem('loggedInUser'));
-            const tripHistory = document.getElementById('trip-history');
-            tripHistory.innerHTML = '';
-            const querySnapshot = await db.collection("viajes").where("userId", "==", user.uid).get();
-            querySnapshot.forEach((doc) => {
-                const trip = doc.data();
-                const listItem = document.createElement('li');
-                listItem.innerText = `Fecha: ${trip.date}, Origen: ${trip.origen}, Destino: ${trip.destino}, Remisería: ${trip.remiseria}`;
-                tripHistory.appendChild(listItem);
-            });
-        }
-
-        window.onload = function() {
-            const user = JSON.parse(localStorage.getItem('loggedInUser'));
-            if (user) {
-                showProfile();
-            } else {
-                showLogin();
-            }
-        };
     </script>
 </body>
 </html>
+
