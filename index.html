@@ -86,24 +86,33 @@
         <p id="profile-country"></p>
         <p id="profile-state"></p>
         <p id="profile-city"></p>
-        <div id="remiseria-contact" style="display: none;">
-            <h3>Contacto de Remisería</h3>
-            <input type="text" id="remiseria-phone" placeholder="Número de Teléfono">
+        
+        <!-- Perfil específico para remiserías -->
+        <div id="remiseria-profile" style="display: none;">
+            <h3>Datos de Contacto</h3>
+            <input type="text" id="remiseria-phone" placeholder="Número de WhatsApp (con código de país)">
             <button onclick="updateRemiseriaContact()">Actualizar Contacto</button>
         </div>
-        <button onclick="showRequestForm()">Solicitar Remis</button>
-        <div id="request-form" style="display: none;">
-            <h3>Solicitar Remis</h3>
-            <input type="text" id="request-origen" placeholder="Lugar de inicio" required>
-            <input type="text" id="request-destino" placeholder="Destino" required>
-            <input type="text" id="request-city" placeholder="Localidad" required>
-            <input type="text" id="request-name" placeholder="Nombre de Remisería (opcional)">
-            <button onclick="solicitarRemis()">Enviar Solicitud</button>
-            <div id="request-error" class="error">Por favor, completa todos los campos.</div>
-            <div id="request-success" class="success" style="display: none;">¡Solicitud enviada con éxito!</div>
+
+        <!-- Perfil específico para usuarios -->
+        <div id="user-profile" style="display: none;">
+            <button onclick="showRequestForm()">Solicitar Remis</button>
+            <div id="request-form" style="display: none;">
+                <h3>Solicitar Remis</h3>
+                <input type="text" id="request-origen" placeholder="Lugar de inicio" required>
+                <input type="text" id="request-destino" placeholder="Destino" required>
+                <input type="text" id="request-city" placeholder="Localidad" required>
+                <select id="remiseria-select" required>
+                    <option value="">Seleccione una remisería</option>
+                </select>
+                <button onclick="solicitarRemis()">Enviar Solicitud</button>
+                <div id="request-error" class="error">Por favor, completa todos los campos.</div>
+                <div id="request-success" class="success" style="display: none;">¡Solicitud enviada con éxito!</div>
+            </div>
+            <h3>Historial de Viajes</h3>
+            <ul id="trip-history"></ul>
         </div>
-        <h3>Historial de Viajes</h3>
-        <ul id="trip-history"></ul>
+
         <button onclick="logout()">Cerrar Sesión</button>
     </div>
 
@@ -151,7 +160,8 @@
                     role,
                     country,
                     state,
-                    city
+                    city,
+                    whatsappNumber: role === 'remiseria' ? '' : null
                 });
                 alert("Registro exitoso");
                 showLogin();
@@ -165,7 +175,6 @@
             const email = document.getElementById('login-email').value.trim();
             const password = document.getElementById('login-password').value.trim();
 
-            // Validación básica del formato del correo electrónico
             const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
             if (!emailPattern.test(email)) {
                 document.getElementById('login-error').innerText = 'Formato de correo electrónico inválido.';
@@ -178,7 +187,8 @@
                 const user = userCredential.user;
                 const querySnapshot = await db.collection("users").where("uid", "==", user.uid).get();
                 querySnapshot.forEach((doc) => {
-                    localStorage.setItem('loggedInUser', JSON.stringify(doc.data()));
+                    const userData = { ...doc.data(), docId: doc.id };
+                    localStorage.setItem('loggedInUser', JSON.stringify(userData));
                 });
                 alert("Inicio de sesión exitoso");
                 showProfile();
@@ -195,7 +205,8 @@
                 const user = result.user;
                 const querySnapshot = await db.collection("users").where("uid", "==", user.uid).get();
                 querySnapshot.forEach((doc) => {
-                    localStorage.setItem('loggedInUser', JSON.stringify(doc.data()));
+                    const userData = { ...doc.data(), docId: doc.id };
+                    localStorage.setItem('loggedInUser', JSON.stringify(userData));
                 });
                 alert("Inicio de sesión exitoso con Google");
                 showProfile();
@@ -204,25 +215,90 @@
             }
         }
 
+        async function updateRemiseriaContact() {
+            const phone = document.getElementById('remiseria-phone').value.trim();
+            const user = JSON.parse(localStorage.getItem('loggedInUser'));
+            
+            try {
+                await db.collection("users").doc(user.docId).update({
+                    whatsappNumber: phone
+                });
+                alert("Número de contacto actualizado");
+                // Actualizar datos en localStorage
+                user.whatsappNumber = phone;
+                localStorage.setItem('loggedInUser', JSON.stringify(user));
+            } catch (error) {
+                console.error("Error al actualizar contacto:", error);
+                alert("Error al actualizar el contacto");
+            }
+        }
+
+        async function loadRemiserias() {
+            const select = document.getElementById('remiseria-select');
+            select.innerHTML = '<option value="">Seleccione una remisería</option>';
+            
+            try {
+                const querySnapshot = await db.collection("users")
+                    .where("role", "==", "remiseria")
+                    .where("city", "==", JSON.parse(localStorage.getItem('loggedInUser')).city)
+                    .get();
+                
+                querySnapshot.forEach((doc) => {
+                    const remiseria = doc.data();
+                    if (remiseria.whatsappNumber) { // Solo mostrar remiserías con número configurado
+                        const option = document.createElement('option');
+                        option.value = JSON.stringify({
+                            name: remiseria.name,
+                            whatsappNumber: remiseria.whatsappNumber
+                        });
+                        option.textContent = remiseria.name;
+                        select.appendChild(option);
+                    }
+                });
+            } catch (error) {
+                console.error("Error al cargar remiserías:", error);
+            }
+        }
+
         function showLogin() {
             document.getElementById('login-container').style.display = 'block';
             document.getElementById('register-container').style.display = 'none';
+            document.getElementById('profile-container').style.display = 'none';
         }
 
         function showRegister() {
             document.getElementById('login-container').style.display = 'none';
             document.getElementById('register-container').style.display = 'block';
+            document.getElementById('profile-container').style.display = 'none';
         }
 
         function showProfile() {
             const user = JSON.parse(localStorage.getItem('loggedInUser'));
-            document.getElementById('profile-name').innerText = user.name;
-            document.getElementById('profile-email').innerText = user.email;
-            document.getElementById('profile-country').innerText = user.country;
-            document.getElementById('profile-state').innerText = user.state;
-            document.getElementById('profile-city').innerText = user.city;
+            document.getElementById('profile-name').innerText = `Nombre: ${user.name}`;
+            document.getElementById('profile-email').innerText = `Email: ${user.email}`;
+            document.getElementById('profile-country').innerText = `País: ${user.country}`;
+            document.getElementById('profile-state').innerText = `Estado: ${user.state}`;
+            document.getElementById('profile-city').innerText = `Ciudad: ${user.city}`;
+            
+            // Mostrar/ocultar secciones según el rol
+            const remiseriaProfile = document.getElementById('remiseria-profile');
+            const userProfile = document.getElementById('user-profile');
+            
+            if (user.role === 'remiseria') {
+                remiseriaProfile.style.display = 'block';
+                userProfile.style.display = 'none';
+                if (user.whatsappNumber) {
+                    document.getElementById('remiseria-phone').value = user.whatsappNumber;
+                }
+            } else {
+                remiseriaProfile.style.display = 'none';
+                userProfile.style.display = 'block';
+                loadRemiserias(); // Cargar lista de remiserías disponibles
+            }
+
             document.getElementById('profile-container').style.display = 'block';
             document.getElementById('login-container').style.display = 'none';
+            document.getElementById('register-container').style.display = 'none';
         }
 
         function logout() {
@@ -242,27 +318,102 @@
             const origen = document.getElementById('request-origen').value.trim();
             const destino = document.getElementById('request-destino').value.trim();
             const city = document.getElementById('request-city').value.trim();
-            const name = document.getElementById('request-name').value.trim();
-            if (!origen || !destino || !city) {
+            const remiseriaSelect = document.getElementById('remiseria-select');
+            const remiseriaData = JSON.parse(remiseriaSelect.value);
+
+            if (!origen || !destino || !city || !remiseriaData) {
                 document.getElementById('request-error').style.display = 'block';
                 return;
             }
 
             try {
+                const user = JSON.parse(localStorage.getItem('loggedInUser'));
+                
+                // Crear mensaje para WhatsApp
+                const mensaje = encodeURIComponent(
+                    `*Nueva Solicitud de Viaje*\n` +
+                    `Cliente: ${user.name}\n` +
+                    `Origen: ${origen}\n` +
+                    `Destino: ${destino}\n` +
+                    `Ciudad: ${city}`
+                );
+
+                // Guardar solicitud en Firebase
                 await db.collection('remisRequests').add({
                     origen,
                     destino,
                     city,
-                    name,
-                    userId: JSON.parse(localStorage.getItem('loggedInUser')).uid
+                    userId: user.uid,
+                    userName: user.name,
+                    remiseriaName: remiseriaData.name,
+                    remiseriaWhatsApp: remiseriaData.whatsappNumber,
+                    timestamp: new Date(),
+                    status: 'pending'
                 });
+
+                // Abrir WhatsApp con el mensaje
+                const whatsappURL = `https://wa.me/${remiseriaData.whatsappNumber}?text=${mensaje}`;
+                window.open(whatsappURL, '_blank');
+
                 document.getElementById('request-success').style.display = 'block';
                 document.getElementById('request-error').style.display = 'none';
+
+                // Limpiar formulario
+                document.getElementById('request-origen').value = '';
+                document.getElementById('request-destino').value = '';
+                document.getElementById('request-city').value = '';
+                document.getElementById('remiseria-select').value = '';
+
             } catch (error) {
                 console.error('Error al enviar la solicitud:', error);
+                document.getElementById('request-error').innerText = 'Error al enviar la solicitud. Por favor, intente nuevamente.';
+                document.getElementById('request-error').style.display = 'block';
             }
         }
+
+        // Cargar historial de viajes
+        async function loadTripHistory() {
+            const user = JSON.parse(localStorage.getItem('loggedInUser'));
+            const tripHistoryElement = document.getElementById('trip-history');
+            tripHistoryElement.innerHTML = '';
+
+            try {
+                const querySnapshot = await db.collection('remisRequests')
+                    .where('userId', '==', user.uid)
+                    .orderBy('timestamp', 'desc')
+                    .limit(10)
+                    .get();
+
+                querySnapshot.forEach((doc) => {
+                    const trip = doc.data();
+                    const li = document.createElement('li');
+                    li.innerHTML = `
+                        <strong>${trip.remiseriaName}</strong><br>
+                        De: ${trip.origen}<br>
+                        A: ${trip.destino}<br>
+                        Fecha: ${trip.timestamp.toDate().toLocaleDateString()}
+                    `;
+                    tripHistoryElement.appendChild(li);
+                });
+            } catch (error) {
+                console.error('Error al cargar historial:', error);
+            }
+        }
+
+        // Verificar estado de autenticación al cargar la página
+        auth.onAuthStateChanged((user) => {
+            if (user) {
+                const userData = localStorage.getItem('loggedInUser');
+                if (userData) {
+                    showProfile();
+                    if (JSON.parse(userData).role === 'user') {
+                        loadTripHistory();
+                    }
+                }
+            } else {
+                showLogin();
+            }
+        });
     </script>
 </body>
 </html>
-
